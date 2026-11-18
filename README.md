@@ -4,6 +4,8 @@
 
 A Python test suite and closed-loop physics simulation verifying the decision logic of an **Autonomous Emergency Braking (AEB)** controller against functional, robustness, and safety requirements.
 
+**[Launch Interactive HTML5 Canvas SIL Simulation](https://atheromatosis.github.io/aeb-sil/)**
+
 ## System Requirements (SUT)
 * **REQ-01 (Fault Handling):** Transition to `FAULT_DEGRADED` when radar signal is invalid (`sensor_valid == False`) or physical inputs are negative.
 * **REQ-02 (Standstill Safety):** Remain in `NORMAL` state when `ego_speed == 0 m/s` (preventing division-by-zero exceptions).
@@ -33,10 +35,10 @@ aeb-sil/
 ├─ tests/
 │  ╰─ test_aeb.py           # Pytest suite (Unit, BVA, Hysteresis, SIL, SOTIF)
 ├─ .gitignore
+├─ index.html               # Interactive HTML5 Canvas AEB SIL simulation
 ├─ pytest.ini               # Default pytest & HTML report configuration
 ├─ requirements.txt         # Pinned dependencies
 ╰─ README.md
-
 ```
 
 ## Quick Start

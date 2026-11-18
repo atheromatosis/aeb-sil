@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AEB SIL Simulation — Interactive ADAS Telemetry</title>
+  <style>
+    :root {
+      --bg: #0b0f17;
+      --panel: rgba(17, 24, 39, 0.82);
+      --border: rgba(148, 163, 184, 0.18);
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --normal: #10b981;
+      --warning: #f59e0b;
+      --braking: #ef4444;
+      --fault: #a855f7;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* HUD Telemetry Overlay */
+    .hud-top {
+      position: fixed;
+      top: 20px;
+      left: 20px;
+      right: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      pointer-events: none;
+      flex-wrap: wrap;
+    }
+
+    .card {
+      background: var(--panel);
+      backdrop-filter: blur(10px);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px 18px;
+      pointer-events: auto;
+    }
+
+    .title {
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .telemetry-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(110px, 1fr));
+      gap: 14px;
+    }
+
+    .metric-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .metric-value {
+      font-size: 18px;
+      font-weight: 700;
+      margin-top: 3px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .state-badge {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      margin-top: 3px;
+      background: rgba(16, 185, 129, 0.16);
+      color: var(--normal);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+    }
+
+    /* Scenario Controls */
+    .controls {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+      width: max-content;
+      max-width: 95vw;
+    }
+
+    button {
+      background: rgba(30, 41, 59, 0.85);
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    button:hover {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.15);
+    }
+
+    button.active {
+      border-color: #38bdf8;
+      background: rgba(56, 189, 248, 0.25);
+      box-shadow: 0 0 16px rgba(56, 189, 248, 0.25);
+    }
+
+    .banner {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(15, 23, 42, 0.92);
+      border: 1px solid var(--border);
+      padding: 14px 24px;
+      border-radius: 10px;
+      font-size: 15px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      opacity: 0;
+      transition: opacity 0.25s ease;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    .banner.visible {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="simCanvas"></canvas>
+
+  <div class="hud-top">
+    <div class="card">
+      <div class="title">ADAS Software-in-the-Loop (SIL)</div>
+      <div class="subtitle" id="scenarioTitle">SIL-01: Urban CCRs (45 km/h, Dry μ=0.90)</div>
+    </div>
+
+    <div class="card telemetry-grid">
+      <div>
+        <div class="metric-label">Ego Speed</div>
+        <div class="metric-value" id="speedVal">45.0 km/h</div>
+      </div>
+      <div>
+        <div class="metric-label">Distance</div>
+        <div class="metric-value" id="distVal">30.0 m</div>
+      </div>
+      <div>
+        <div class="metric-label">TTC</div>
+        <div class="metric-value" id="ttcVal">2.40 s</div>
+      </div>
+      <div>
+        <div class="metric-label">AEB State</div>
+        <div class="state-badge" id="stateBadge">NORMAL</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="banner" id="outcomeBanner"></div>
+
+  <div class="controls card">
+    <button class="active" data-scenario="urban">SIL-01: Urban Dry (45 km/h)</button>
+    <button data-scenario="wet">SIL-04: Wet Road SOTIF (50 km/h, μ=0.45)</button>
+    <button data-scenario="highway">SIL-03: Highway SOTIF (108 km/h)</button>
+    <button data-scenario="fault">REQ-01: Radar Fault Injection</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("simCanvas");
+    const ctx = canvas.getContext("2d");
+
+    function resizeCanvas() {
+      canvas.width = window.innerWidth * window.devicePixelRatio;
+      canvas.height = window.innerHeight * window.devicePixelRatio;
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    }
+    window.addEventListener("resize", resizeCanvas);
+    resizeCanvas();
+
+    // --- AEB Controller (Mirrors src/aeb_controller.py 1:1) ---
+    const AEBState = {
+      NORMAL: "NORMAL",
+      WARNING: "WARNING",
+      EMERGENCY_BRAKING: "EMERGENCY_BRAKING",
+      FAULT_DEGRADED: "FAULT_DEGRADED"
+    };
+
+    class AEBController {
+      constructor(hysteresisMargin = 0.3) {
+        this.state = AEBState.NORMAL;
+        this.ttcWarning = 2.5;
+        this.ttcBraking = 1.5;
+        this.hysteresis = hysteresisMargin;
+      }
+
+      update(egoSpeedMps, distanceM, sensorValid = true) {
+        if (!sensorValid || distanceM < 0 || egoSpeedMps < 0) {
+          this.state = AEBState.FAULT_DEGRADED;
+          return this.state;
+        }
+        if (egoSpeedMps === 0) {
+          this.state = AEBState.NORMAL;
+          return this.state;
+        }
+
+        const ttc = distanceM / egoSpeedMps;
+
+        if (this.state === AEBState.EMERGENCY_BRAKING) {
+          if (ttc > this.ttcBraking + this.hysteresis) {
+            this.state = ttc <= this.ttcWarning ? AEBState.WARNING : AEBState.NORMAL;
+          }
+        } else if (this.state === AEBState.WARNING) {
+          if (ttc <= this.ttcBraking) {
+            this.state = AEBState.EMERGENCY_BRAKING;
+          } else if (ttc > this.ttcWarning + this.hysteresis) {
+            this.state = AEBState.NORMAL;
+          }
+        } else {
+          if (ttc <= this.ttcBraking) {
+            this.state = AEBState.EMERGENCY_BRAKING;
+          } else if (ttc <= this.ttcWarning) {
+            this.state = AEBState.WARNING;
+          } else {
+            this.state = AEBState.NORMAL;
+          }
+        }
+        return this.state;
+      }
+    }
+
+    // --- Scenarios ---
+    const SCENARIOS = {
+      urban: {
+        title: "SIL-01: Euro NCAP Urban CCRs (45 km/h, Dry μ=0.90)",
+        speedKmh: 45.0,
+        distanceM: 34.0,
+        friction: 0.90,
+        sensorValid: true
+      },
+      wet: {
+        title: "SIL-04: Wet Asphalt SOTIF Limit (50 km/h, μ=0.45)",
+        speedKmh: 50.0,
+        distanceM: 34.0,
+        friction: 0.45,
+        sensorValid: true
+      },
+      highway: {
+        title: "SIL-03: Highway ODD SOTIF Limit (108 km/h, μ=0.85)",
+        speedKmh: 108.0,
+        distanceM: 65.0,
+        friction: 0.85,
+        sensorValid: true
+      },
+      fault: {
+        title: "REQ-01: Radar Signal Loss — Fault Injection",
+        speedKmh: 45.0,
+        distanceM: 34.0,
+        friction: 0.90,
+        sensorValid: false
+      }
+    };
+
+    const GRAVITY = 9.81;
+    let activeKey = "urban";
+    let sim = {};
+    let roadOffset = 0;
+    let particles = [];
+
+    function resetSimulation(key) {
+      activeKey = key;
+      const cfg = SCENARIOS[key];
+      document.getElementById("scenarioTitle").textContent = cfg.title;
+      document.getElementById("outcomeBanner").classList.remove("visible");
+
+      sim = {
+        controller: new AEBController(0.3),
+        speedMps: cfg.speedKmh / 3.6,
+        distanceM: cfg.distanceM,
+        initialDistanceM: cfg.distanceM,
+        friction: cfg.friction,
+        sensorValid: cfg.sensorValid,
+        actuatorDelay: 0.2,
+        brakingActiveTime: 0,
+        preFilled: false,
+        finished: false,
+        resetTimer: 0
+      };
+      particles = [];
+    }
+
+    document.querySelectorAll("button[data-scenario]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        resetSimulation(btn.dataset.scenario);
+      });
+    });
+
+    resetSimulation("urban");
+
+    function stateColor(state) {
+      switch (state) {
+        case AEBState.WARNING: return "#f59e0b";
+        case AEBState.EMERGENCY_BRAKING: return "#ef4444";
+        case AEBState.FAULT_DEGRADED: return "#a855f7";
+        default: return "#10b981";
+      }
+    }
+
+    // --- Physics Step (dt = 1/60s) ---
+    function stepPhysics(dt) {
+      if (sim.finished) {
+        sim.resetTimer += dt;
+        if (sim.resetTimer > 2.6) {
+          resetSimulation(activeKey);
+        }
+        return;
+      }
+
+      const state = sim.controller.update(sim.speedMps, sim.distanceM, sim.sensorValid);
+      const maxDecel = sim.friction * GRAVITY;
+
+      if (state === AEBState.WARNING) {
+        sim.preFilled = true;
+      } else if (state === AEBState.EMERGENCY_BRAKING) {
+        const effectiveDelay = sim.preFilled ? sim.actuatorDelay * 0.5 : sim.actuatorDelay;
+        if (sim.brakingActiveTime >= effectiveDelay) {
+          sim.speedMps = Math.max(0, sim.speedMps - maxDecel * dt);
+        }
+        sim.brakingActiveTime += dt;
+      } else {
+        sim.brakingActiveTime = 0;
+        sim.preFilled = false;
+      }
+
+      sim.distanceM -= sim.speedMps * dt;
+      roadOffset = (roadOffset + sim.speedMps * 14 * dt) % 80;
+
+      // Rain particles for wet road scenario
+      if (sim.friction < 0.6 && Math.random() < 0.7) {
+        particles.push({
+          x: Math.random() * window.innerWidth,
+          y: -10,
+          vy: 420 + Math.random() * 180
+        });
+      }
+      particles.forEach(p => { p.y += p.vy * dt; });
+      particles = particles.filter(p => p.y < window.innerHeight);
+
+      // End conditions
+      const banner = document.getElementById("outcomeBanner");
+      if (sim.distanceM <= 0) {
+        sim.distanceM = 0;
+        sim.speedMps = 0;
+        sim.finished = true;
+        banner.style.borderColor = "#ef4444";
+        banner.style.color = "#fca5a5";
+        banner.textContent = sim.sensorValid
+          ? "SOTIF LIMIT EXCEEDED — IMPACT OCCURRED (XFAIL)"
+          : "SENSOR FAULT — DEGRADED MODE IMPACT";
+        banner.classList.add("visible");
+      } else if (sim.speedMps <= 0.01) {
+        sim.speedMps = 0;
+        sim.finished = true;
+        banner.style.borderColor = "#10b981";
+        banner.style.color = "#6ee7b7";
+        banner.textContent = `COLLISION AVOIDED — STOPPED WITH ${sim.distanceM.toFixed(2)}m MARGIN`;
+        banner.classList.add("visible");
+      }
+
+      updateHUD(state);
+    }
+
+    function updateHUD(state) {
+      document.getElementById("speedVal").textContent = `${(sim.speedMps * 3.6).toFixed(1)} km/h`;
+      document.getElementById("distVal").textContent = `${sim.distanceM.toFixed(2)} m`;
+      const ttc = sim.speedMps > 0.1 ? (sim.distanceM / sim.speedMps).toFixed(2) + " s" : "∞";
+      document.getElementById("ttcVal").textContent = sim.sensorValid ? ttc : "ERR";
+
+      const badge = document.getElementById("stateBadge");
+      const color = stateColor(state);
+      badge.textContent = state;
+      badge.style.color = color;
+      badge.style.borderColor = color;
+      badge.style.background = `${color}22`;
+    }
+
+    // --- Render Loop ---
+    function render() {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      // Subtle background grid
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.06)";
+      ctx.lineWidth = 1;
+      for (let x = 0; x < w; x += 48) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+      }
+      for (let y = 0; y < h; y += 48) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke();
+      }
+
+      // Rain effect if wet road
+      if (sim.friction < 0.6) {
+        ctx.strokeStyle = "rgba(56, 189, 248, 0.25)";
+        ctx.lineWidth = 1.2;
+        particles.forEach(p => {
+          ctx.beginPath();
+          ctx.moveTo(p.x, p.y);
+          ctx.lineTo(p.x - 4, p.y + 14);
+          ctx.stroke();
+        });
+      }
+
+      const roadY = h * 0.62;
+      const roadHeight = 110;
+
+      // Road surface
+      ctx.fillStyle = sim.friction < 0.6 ? "#111827" : "#161e2e";
+      ctx.fillRect(0, roadY - roadHeight / 2, w, roadHeight);
+
+      // Road borders
+      ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, roadY - roadHeight / 2);
+      ctx.lineTo(w, roadY - roadHeight / 2);
+      ctx.moveTo(0, roadY + roadHeight / 2);
+      ctx.lineTo(w, roadY + roadHeight / 2);
+      ctx.stroke();
+
+      // Dashed center line
+      ctx.strokeStyle = "rgba(248, 250, 252, 0.25)";
+      ctx.setLineDash([36, 44]);
+      ctx.lineDashOffset = -roadOffset;
+      ctx.beginPath();
+      ctx.moveTo(0, roadY);
+      ctx.lineTo(w, roadY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Positions on screen
+      const egoX = Math.max(80, w * 0.18);
+      const carW = 86;
+      const carH = 40;
+      const pxPerMeter = Math.min(14, (w * 0.62) / sim.initialDistanceM);
+      const targetX = egoX + carW + sim.distanceM * pxPerMeter;
+
+      const activeColor = stateColor(sim.controller.state);
+
+      // Radar cone
+      if (sim.sensorValid) {
+        const coneLen = Math.min(targetX - (egoX + carW), 440);
+        const grad = ctx.createLinearGradient(egoX + carW, roadY, egoX + carW + coneLen, roadY);
+        grad.addColorStop(0, `${activeColor}55`);
+        grad.addColorStop(1, `${activeColor}05`);
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.moveTo(egoX + carW, roadY);
+        ctx.lineTo(egoX + carW + coneLen, roadY - 46);
+        ctx.lineTo(egoX + carW + coneLen, roadY + 46);
+        ctx.closePath();
+        ctx.fill();
+      }
+
+      // Target obstacle vehicle
+      ctx.fillStyle = "#334155";
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(targetX, roadY - carH / 2, carW, carH, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      // Target tail lights
+      ctx.fillStyle = "#ef4444";
+      ctx.fillRect(targetX, roadY - 14, 4, 8);
+      ctx.fillRect(targetX, roadY + 6, 4, 8);
+
+      // Ego vehicle (SUT)
+      ctx.fillStyle = "#0f172a";
+      ctx.strokeStyle = activeColor;
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.roundRect(egoX, roadY - carH / 2, carW, carH, 8);
+      ctx.fill();
+      ctx.stroke();
+
+      // Ego brake lights when EMERGENCY_BRAKING
+      if (sim.controller.state === AEBState.EMERGENCY_BRAKING) {
+        ctx.fillStyle = "#ef4444";
+        ctx.shadowColor = "#ef4444";
+        ctx.shadowBlur = 14;
+        ctx.fillRect(egoX - 3, roadY - 15, 5, 10);
+        ctx.fillRect(egoX - 3, roadY + 5, 5, 10);
+        ctx.shadowBlur = 0;
+      }
+
+      // Distance measurement line
+      if (sim.distanceM > 0.2) {
+        const lineY = roadY + 34;
+        ctx.strokeStyle = "rgba(148, 163, 184, 0.5)";
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(egoX + carW, lineY);
+        ctx.lineTo(targetX, lineY);
+        ctx.stroke();
+
+        ctx.fillStyle = "#cbd5e1";
+        ctx.font = "12px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`${sim.distanceM.toFixed(1)} m`, (egoX + carW + targetX) / 2, lineY + 15);
+      }
+    }
+
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min(0.05, (now - lastTime) / 1000);
+      lastTime = now;
+      stepPhysics(dt);
+      render();
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
