@@ -24,18 +24,19 @@ A Python test suite and closed-loop physics simulation verifying the decision lo
 ## Project Structure
 ```text
 aeb-sil/
-├── .github/workflows/
-│   └── tests.yml           # GitHub Actions CI pipeline
-├── docs/
-│   └── test_report.png     # Sample pytest-html execution report
-├── src/
-│   └── aeb_controller.py   # AEB state machine with hysteresis & TTC logic
-├── tests/
-│   └── test_aeb.py         # Pytest suite (Unit, BVA, Hysteresis, SIL, SOTIF)
-├── .gitignore
-├── pytest.ini              # Default pytest & HTML report configuration
-├── requirements.txt        # Pinned dependencies
-└── README.md
+╭─ .github/workflows/
+│  ╰─ tests.yml             # GitHub Actions CI pipeline
+├─ docs/
+│  ╰─ test_report.png       # Sample pytest-html execution report
+├─ src/
+│  ╰─ aeb_controller.py     # AEB state machine with hysteresis & TTC logic
+├─ tests/
+│  ╰─ test_aeb.py           # Pytest suite (Unit, BVA, Hysteresis, SIL, SOTIF)
+├─ .gitignore
+├─ pytest.ini               # Default pytest & HTML report configuration
+├─ requirements.txt         # Pinned dependencies
+╰─ README.md
+
 ```
 
 ## Quick Start
