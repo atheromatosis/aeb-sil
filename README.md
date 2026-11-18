@@ -1,21 +1,35 @@
 # AEB System - Software-in-the-Loop (SIL) Test Framework
 
-Projekt weryfikujący logikę systemu automatycznego hamowania awaryjnego (Autonomous Emergency Braking) w środowisku SIL (Software-in-the-Loop).
+A Python-based Software-in-the-Loop (SIL) testing framework designed to verify the control logic and state machine of an **Autonomous Emergency Braking (AEB)** system.
 
-## Wymagania systemowe (Requirements)
-* **REQ-01:** Jeśli sygnał z radaru jest nieprawidłowy (`sensor_valid == False`), system musi przejść w stan `FAULT_DEGRADED`.
-* **REQ-02:** Jeśli prędkość pojazdu wynosi 0 m/s, system musi pozostać w stanie `NORMAL` (brak błędu dzielenia przez zero).
-* **REQ-03:** Jeśli czas do kolizji `TTC > 2.5s`, system musi pozostać w stanie `NORMAL`.
-* **REQ-04:** Jeśli `1.5s < TTC <= 2.5s`, system musi przejść w stan `WARNING`.
-* **REQ-05:** Jeśli `TTC <= 1.5s`, system musi aktywować stan `EMERGENCY_BRAKING`.
+## System Requirements (SUT)
+* **REQ-01:** If the radar signal is invalid (`sensor_valid == False`) or input values are negative, the system shall transition to `FAULT_DEGRADED` state.
+* **REQ-02:** If the vehicle is at a standstill (`ego_speed == 0 m/s`), the system shall remain in `NORMAL` state (preventing zero-division errors).
+* **REQ-03:** If Time-To-Collision `TTC > 2.5s`, the system shall remain in `NORMAL` state.
+* **REQ-04:** If `1.5s < TTC <= 2.5s`, the system shall transition to `WARNING` state.
+* **REQ-05:** If `TTC <= 1.5s`, the system shall activate `EMERGENCY_BRAKING` state.
 
-## Pokrycie testowe (Test Coverage)
-* **Testy jednostkowe (Unit):** Weryfikacja maszyny stanów i odporności na błędy (`Fault Injection`, dzielenie przez zero).
-* **Analiza wartości brzegowych (BVA):** Testy progów `TTC = 2.5s` oraz `TTC = 1.5s`.
-* **Symulacja dynamiczna (SIL):** Pętla czasowa `dt = 0.1s` weryfikująca drogę hamowania i brak kolizji.
-* **Analiza SOTIF (ISO 21448):** Test `XFAIL` definiujący granicę prędkości autostradowej (108 km/h) dla zadanych progów TTC.
+## Test Coverage & Methodology
+* **Unit & State Machine Testing:** Verification of state transitions and robustness against invalid inputs (`Fault Injection`, zero-speed handling).
+* **Boundary Value Analysis (BVA):** Precision testing around critical thresholds (`TTC = 2.5s` and `TTC = 1.5s`).
+* **Dynamic SIL Simulation:** Closed-loop time simulation (`dt = 0.1s`) validating braking deceleration physics and collision avoidance KPIs (`remaining_distance > 0.5m`).
+* **SOTIF Analysis (ISO 21448):** Dedicated `XFAIL` test case defining the Operational Design Domain (ODD) highway speed limit (`108 km/h`) under current TTC thresholds.
 
-## Jak uruchomić testy i wygenerować raport
+## Project Structure
+```text
+aeb-sil/
+├── .github/workflows/
+│   └── tests.yml           # CI/CD pipeline (GitHub Actions)
+├── src/
+│   └── aeb_controller.py   # System Under Test (AEB logic & state machine)
+├── tests_aeb/
+│   └── test_aeb.py         # Pytest test suite (Unit, BVA, SIL, SOTIF)
+├── requirements.txt        # Project dependencies
+└── README.md               # Documentation
+```
+
+## How to Run Tests & Generate HTML Report
 ```bash
 pip install -r requirements.txt
 pytest -v --html=report.html --self-contained-html
+```
