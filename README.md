@@ -1,3 +1,5 @@
+![ADAS SIL Test Suite](https://github.com/atheromatosis/aeb-sil/actions/workflows/tests.yml/badge.svg)
+
 # AEB System - Software-in-the-Loop (SIL) Test Framework
 
 A Python-based Software-in-the-Loop (SIL) testing framework designed to verify the control logic and state machine of an **Autonomous Emergency Braking (AEB)** system.
