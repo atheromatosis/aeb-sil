@@ -2,20 +2,24 @@
 
 # AEB System — Software-in-the-Loop (SIL) Test Framework
 
-A Python test suite and closed-loop simulation verifying the decision logic of an **Autonomous Emergency Braking (AEB)** controller against functional and safety requirements.
+A Python test suite and closed-loop physics simulation verifying the decision logic of an **Autonomous Emergency Braking (AEB)** controller against functional, robustness, and safety requirements.
 
 ## System Requirements (SUT)
 * **REQ-01 (Fault Handling):** Transition to `FAULT_DEGRADED` when radar signal is invalid (`sensor_valid == False`) or physical inputs are negative.
-* **REQ-02 (Standstill Safety):** Remain in `NORMAL` state when `ego_speed == 0 m/s` (avoiding division-by-zero exceptions).
+* **REQ-02 (Standstill Safety):** Remain in `NORMAL` state when `ego_speed == 0 m/s` (preventing division-by-zero exceptions).
 * **REQ-03 (Safe Cruise):** Remain in `NORMAL` when Time-To-Collision `TTC > 2.5s`.
 * **REQ-04 (Driver Warning):** Transition to `WARNING` when `1.5s < TTC <= 2.5s`.
 * **REQ-05 (Emergency Braking):** Activate `EMERGENCY_BRAKING` when `TTC <= 1.5s`.
+* **REQ-06 (State Hysteresis):** Apply a `0.3s` hysteresis band on state recovery (`TTC > 2.8s` to exit `WARNING`, `TTC > 1.8s` to exit `EMERGENCY_BRAKING`) to prevent state chattering.
+* **REQ-07 (Sensor Noise Immunity):** Maintain stable state transitions under radar distance jitter (`±0.5m`) near threshold edges.
 
-## Verification Scope
-* **State Machine & Fault Injection:** Unit tests validating transitions and degraded mode activation upon sensor failure.
+## Verification Scope & Physics Modeling
+* **State Machine & Fault Injection:** Unit tests validating transitions, hysteresis bands, and degraded mode activation upon sensor failure.
 * **Boundary Value Analysis (BVA):** Precision checks at threshold edges (`TTC = 2.50s` vs `2.51s`, and `TTC = 1.50s` vs `1.51s`).
-* **Closed-Loop SIL Simulation:** Time-stepped physics loop (`dt = 0.1s`, deceleration `8.0 m/s²`) verifying collision avoidance (`remaining_distance > 0.5m`) in urban scenarios (`54 km/h`).
-* **SOTIF Limit Analysis (ISO 21448):** Dedicated `XFAIL` scenario documenting the Operational Design Domain (ODD) boundary at highway speed (`108 km/h`), where braking physics cannot prevent impact under static `TTC = 1.5s` thresholds.
+* **Closed-Loop SIL Simulation:** Time-stepped physics loop (`dt = 0.05s`) modeling:
+  * **Road Friction Coefficient ($\mu$):** Limits maximum deceleration ($a_{\max} = \mu \cdot g$) across dry asphalt ($\mu = 0.90$) and wet road ($\mu = 0.45$).
+  * **Brake Actuator Latency & Pre-Fill:** Models `200ms` hydraulic pressure ramp-up delay, reduced by `50%` when pre-filled during the `WARNING` phase.
+* **SOTIF Limit Analysis (ISO 21448):** Dedicated `XFAIL` scenarios documenting Operational Design Domain (ODD) boundaries at highway speed (`108 km/h`) and low-friction wet asphalt (`50 km/h`, $\mu = 0.45$).
 
 ## Project Structure
 ```text
@@ -25,9 +29,9 @@ aeb-sil/
 ├── docs/
 │   └── test_report.png     # Sample pytest-html execution report
 ├── src/
-│   └── aeb_controller.py   # AEB state machine and TTC calculation
+│   └── aeb_controller.py   # AEB state machine with hysteresis & TTC logic
 ├── tests/
-│   └── test_aeb.py         # Pytest suite (Unit, BVA, SIL, SOTIF)
+│   └── test_aeb.py         # Pytest suite (Unit, BVA, Hysteresis, SIL, SOTIF)
 ├── .gitignore
 ├── pytest.ini              # Default pytest & HTML report configuration
 ├── requirements.txt        # Pinned dependencies
