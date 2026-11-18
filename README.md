@@ -15,6 +15,12 @@ A Python test suite and closed-loop physics simulation verifying the decision lo
 * **REQ-06 (State Hysteresis):** Apply a `0.3s` hysteresis band on state recovery (`TTC > 2.8s` to exit `WARNING`, `TTC > 1.8s` to exit `EMERGENCY_BRAKING`) to prevent state chattering.
 * **REQ-07 (Sensor Noise Immunity):** Maintain stable state transitions under radar distance jitter (`±0.5m`) near threshold edges.
 
+## SIL & SOTIF Test Scenarios
+* **SIL-01 (Urban Dry CCRs — ODD Nominal):** Vehicle at `45 km/h` approaching a stationary target at `30m` on dry asphalt ($\mu = 0.90$) with `200ms` actuator latency (reduced via `WARNING` pre-fill) — **PASS** (collision avoided).
+* **SIL-02 (Actuator Latency Verification):** Comparative closed-loop check verifying that `250ms` hydraulic brake delay measurably increases stopping distance vs an ideal `0ms` actuator — **PASS**.
+* **SIL-03 (Highway Speed — SOTIF ISO 21448):** Vehicle at `108 km/h` (`60m` distance) exposing the physical limitation of a static `TTC = 1.5s` threshold at high kinetic energy ($v^2$) — **XFAIL (Documented ODD Limit)**.
+* **SIL-04 (Wet Asphalt — SOTIF ISO 21448):** Urban speed (`50 km/h`, `28m` distance) on low-friction wet road ($\mu = 0.45$, $a_{\max} = 4.41\,\text{m/s}^2$) exposing environmental ODD boundaries — **XFAIL (Documented ODD Limit)**.
+
 ## Verification Scope & Physics Modeling
 * **State Machine & Fault Injection:** Unit tests validating transitions, hysteresis bands, and degraded mode activation upon sensor failure.
 * **Boundary Value Analysis (BVA):** Precision checks at threshold edges (`TTC = 2.50s` vs `2.51s`, and `TTC = 1.50s` vs `1.51s`).
