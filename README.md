@@ -31,7 +31,9 @@ aeb-sil/
 ```
 
 ## How to Run Tests & Generate HTML Report
+HTML report generation (`report.html`) is configured by default in `pytest.ini`. To execute the suite:
+
 ```bash
 pip install -r requirements.txt
-pytest -v --html=report.html --self-contained-html
-```
+python -m pytest
+
