@@ -1,89 +1,74 @@
 import pytest
 from src.aeb_controller import AEBController, AEBState
 
-
 @pytest.fixture
 def aeb():
     return AEBController()
 
+# --- 1. UNIT & FAULT INJECTION TESTS ---
 
-def test_req01_sensor_fault_injection(aeb):
-    """Weryfikacja reakcji na awarię sensora (Fault Injection)."""
-    state = aeb.update(ego_speed=20.0, distance=10.0, sensor_valid=False)
+def test_fault_injection_invalid_sensor(aeb):
+    """REQ-01: Invalid radar signal must transition the system to FAULT_DEGRADED."""
+    state = aeb.update(ego_speed=20.0, distance=50.0, sensor_valid=False)
     assert state == AEBState.FAULT_DEGRADED
 
+def test_fault_injection_negative_inputs(aeb):
+    """REQ-01: Negative physical inputs must trigger FAULT_DEGRADED."""
+    assert aeb.update(ego_speed=-5.0, distance=30.0) == AEBState.FAULT_DEGRADED
+    assert aeb.update(ego_speed=15.0, distance=-10.0) == AEBState.FAULT_DEGRADED
 
-def test_req02_standstill_zero_speed(aeb):
-    """Weryfikacja braku błędu dzielenia przez zero przy postoju."""
-    state = aeb.update(ego_speed=0.0, distance=5.0, sensor_valid=True)
+def test_standstill_vehicle_no_division_by_zero(aeb):
+    """REQ-02: Standstill vehicle (0 m/s) must remain in NORMAL state without ZeroDivisionError."""
+    state = aeb.update(ego_speed=0.0, distance=5.0)
     assert state == AEBState.NORMAL
 
+# --- 2. BOUNDARY VALUE ANALYSIS (BVA) ---
 
-@pytest.mark.parametrize("speed, distance, expected_state", [
-    (10.0, 25.1, AEBState.NORMAL),             # TTC = 2.51s -> NORMAL
-    (10.0, 25.0, AEBState.WARNING),            # TTC = 2.50s -> WARNING
-    (10.0, 15.1, AEBState.WARNING),            # TTC = 1.51s -> WARNING
-    (10.0, 15.0, AEBState.EMERGENCY_BRAKING),  # TTC = 1.50s -> BRAKING
+@pytest.mark.parametrize("speed_mps, distance_m, expected_state", [
+    (10.0, 25.1, AEBState.NORMAL),             # TTC = 2.51s -> slightly above warning threshold
+    (10.0, 25.0, AEBState.WARNING),            # TTC = 2.50s -> exact boundary for WARNING
+    (10.0, 15.1, AEBState.WARNING),            # TTC = 1.51s -> slightly above braking threshold
+    (10.0, 15.0, AEBState.EMERGENCY_BRAKING),  # TTC = 1.50s -> exact boundary for EMERGENCY_BRAKING
 ])
-def test_req03_to_req05_boundary_values(aeb, speed, distance, expected_state):
-    """Testy wartości brzegowych (Boundary Value Analysis) dla progów TTC."""
-    state = aeb.update(ego_speed=speed, distance=distance)
-    assert state == expected_state
+def test_ttc_boundary_values(aeb, speed_mps, distance_m, expected_state):
+    """REQ-03/04/05: Boundary Value Analysis around TTC = 2.5s and TTC = 1.5s."""
+    assert aeb.update(ego_speed=speed_mps, distance=distance_m) == expected_state
 
+# --- 3. CLOSED-LOOP SIL SIMULATION ---
 
-def test_sil_dynamic_emergency_braking_scenario(aeb):
-    """Symulacja dynamiczna w pętli czasu (krok dt = 0.1s)."""
-    dt = 0.1
-    speed = 15.0            # m/s
-    distance = 35.0         # m
-    max_deceleration = 8.0  # m/s^2
-    collision = False
+def run_sil_simulation(initial_speed_kmh: float, initial_distance_m: float, deceleration_mps2: float = 8.0, dt: float = 0.1):
+    """Helper executing a closed-loop time-stepped braking physics simulation."""
+    controller = AEBController()
+    speed_mps = initial_speed_kmh / 3.6
+    distance_m = initial_distance_m
+    time_elapsed = 0.0
 
-    for _ in range(100):
-        state = aeb.update(ego_speed=speed, distance=distance)
-
+    while speed_mps > 0 and distance_m > 0 and time_elapsed < 15.0:
+        state = controller.update(ego_speed=speed_mps, distance=distance_m)
         if state == AEBState.EMERGENCY_BRAKING:
-            speed = max(0.0, speed - max_deceleration * dt)
+            speed_mps = max(0.0, speed_mps - deceleration_mps2 * dt)
+        distance_m -= speed_mps * dt
+        time_elapsed += dt
 
-        distance -= speed * dt
+    return distance_m, speed_mps, controller.state
 
-        if distance <= 0:
-            collision = True
-            break
+def test_sil_urban_scenario_collision_avoided():
+    """SIL-01: Urban scenario (54 km/h, obstacle at 30m) — vehicle must stop safely before impact."""
+    remaining_dist, final_speed, final_state = run_sil_simulation(
+        initial_speed_kmh=54.0,
+        initial_distance_m=30.0
+    )
+    assert final_speed == 0.0
+    assert final_state == AEBState.EMERGENCY_BRAKING
+    assert remaining_dist > 0.5, f"Collision or insufficient safety margin! Remaining distance: {remaining_dist:.2f}m"
 
-        if speed == 0:
-            break
+# --- 4. SOTIF ANALYSIS (ISO 21448) ---
 
-    assert not collision, f"Doszło do kolizji! Pozostały dystans: {distance:.2f}m"
-    assert speed == 0.0, "Pojazd nie zatrzymał się całkowicie"
-    assert distance > 0.5, f"Zatrzymanie zbyt blisko przeszkody: {distance:.2f}m"
-
-@pytest.mark.xfail(reason="SOTIF limit: przy 108 km/h próg TTC=1.5s nie wystarcza do pełnego zatrzymania")
-def test_sil_high_speed_collision_limit(aeb):
-    """
-    Test graniczny SOTIF (ISO 21448): Scenariusz autostradowy.
-    Auto jedzie 30 m/s (108 km/h). Oczekujemy, że obecna konfiguracja progów
-    nie pozwoli na wyhamowanie przed przeszkodą (znane ograniczenie systemu).
-    """
-    dt = 0.1
-    speed = 30.0            # m/s (108 km/h - prędkość autostradowa)
-    distance = 60.0         # m
-    max_deceleration = 8.0  # m/s^2
-    collision = False
-
-    for _ in range(100):
-        state = aeb.update(ego_speed=speed, distance=distance)
-
-        if state == AEBState.EMERGENCY_BRAKING:
-            speed = max(0.0, speed - max_deceleration * dt)
-
-        distance -= speed * dt
-
-        if distance <= 0:
-            collision = True
-            break
-
-        if speed == 0:
-            break
-
-    assert not collision, f"Oczekiwana kolizja SOTIF przy wysokiej prędkości. Dystans: {distance:.2f}m"
+@pytest.mark.xfail(reason="SOTIF Limit (ISO 21448): At 108 km/h, braking physics requires >45m, exceeding TTC=1.5s detection window.")
+def test_sil_highway_sotif_limit():
+    """SIL-02 (SOTIF): Highway scenario (108 km/h, obstacle at 60m) exposing ODD speed limitation."""
+    remaining_dist, final_speed, _ = run_sil_simulation(
+        initial_speed_kmh=108.0,
+        initial_distance_m=60.0
+    )
+    assert remaining_dist > 0.5, f"SOTIF limitation: vehicle failed to stop before obstacle (dist={remaining_dist:.2f}m)"
